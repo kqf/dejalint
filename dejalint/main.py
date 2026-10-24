@@ -1,12 +1,14 @@
 import argparse
 import ast
 import sys
+import tomllib
 from collections import defaultdict
 from collections.abc import Callable, Hashable, Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 from itertools import groupby
 from operator import attrgetter
 from pathlib import Path
+from typing import Any, NoReturn
 
 FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
 DefinitionNode = FunctionNode | ast.ClassDef
@@ -14,7 +16,39 @@ DefinitionNode = FunctionNode | ast.ClassDef
 
 @dataclass
 class Config:
+    paths: list[Path] = field(default_factory=lambda: [Path()])
     min_nodes: int = 8
+    format: str = "line"
+
+
+def find_pyproject(start: Path) -> Path | None:
+    for directory in (start, *start.parents):
+        candidate = directory / "pyproject.toml"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_config(
+    pyproject: Path | None,
+    error: Callable[[str], NoReturn],
+) -> dict[str, Any]:
+    if pyproject is None:
+        return {}
+    with pyproject.open("rb") as f:
+        section = tomllib.load(f).get("tool", {}).get("dejalint", {})
+
+    # Accept both `min-nodes` and `min_nodes`
+    options = {k.replace("-", "_"): v for k, v in section.items()}
+    if unknown := options.keys() - {f.name for f in fields(Config)}:
+        error(
+            f"{pyproject}: unknown [tool.dejalint] options: "
+            + ", ".join(sorted(unknown))
+        )
+    if "paths" in options:
+        # Paths in the config are relative to the pyproject.toml location
+        options["paths"] = [pyproject.parent / p for p in options["paths"]]
+    return options
 
 
 @dataclass(frozen=True, order=True)
@@ -136,22 +170,32 @@ def by_rule(violations: list[Violation]) -> Iterator[str]:
             yield f"  {v.path}:{v.line}:{v.col}: {v.message}"
 
 
-FORMATTERS = {"line": by_line, "rule": by_rule}
+FORMATTERS = {
+    "line": by_line,
+    "rule": by_rule,
+}
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="dejalint",
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        # Unset options don't override values from pyproject.toml
+        argument_default=argparse.SUPPRESS,
     )
-    parser.add_argument("paths", nargs="*", type=Path, default=[Path()])
-    parser.add_argument("--min-nodes", type=int, default=8)
-    parser.add_argument("--format", choices=FORMATTERS, default="line")
-    args = parser.parse_args()
+    parser.add_argument("paths", nargs="*", type=Path)
+    parser.add_argument("--min-nodes", type=int)
+    parser.add_argument("--format", choices=FORMATTERS)
+    args = parser.parse_args(argv)
 
-    violations = check(args.paths, Config(min_nodes=args.min_nodes))
-    for line in FORMATTERS[args.format](violations):
+    options = load_config(find_pyproject(Path.cwd()), parser.error)
+    config = Config(**{**options, **vars(args)})
+    if config.format not in FORMATTERS:
+        parser.error(f"unknown format {config.format!r}")
+
+    violations = check(config.paths, config)
+    for line in FORMATTERS[config.format](violations):
         print(line)
     return 1 if violations else 0
 
