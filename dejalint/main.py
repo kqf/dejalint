@@ -136,7 +136,10 @@ def by_rule(violations: list[Violation]) -> Iterator[str]:
             yield f"  {v.path}:{v.line}:{v.col}: {v.message}"
 
 
-FORMATTERS = {"line": by_line, "rule": by_rule}
+FORMATTERS = {
+    "line": by_line,
+    "rule": by_rule,
+}
 
 
 def main() -> int:
