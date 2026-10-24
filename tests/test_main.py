@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from dejalint.main import check
+from dejalint.main import Config, by_line, by_rule, check
 
 BODY = """
     total = 0
@@ -25,11 +25,21 @@ def src(tmp_path: Path) -> Path:
 
 def test_check(src: Path):
     a, b = src / "a.py", src / "b.py"
-    assert check([src], min_nodes=8) == [
+    assert list(by_line(check([src], Config()))) == [
         f"{b}:1:1: DJL001 Duplicate function body 'other' (first at {a}:1)",
         f"{b}:8:1: DJL002 Duplicate name 'squares' (first at {a}:1)",
     ]
 
 
 def test_clean(src: Path):
-    assert check([src / "c.py"], min_nodes=8) == []
+    assert check([src / "c.py"], Config()) == []
+
+
+def test_by_rule(src: Path):
+    a, b = src / "a.py", src / "b.py"
+    assert list(by_rule(check([src], Config()))) == [
+        "DJL001:",
+        f"  {b}:1:1: Duplicate function body 'other' (first at {a}:1)",
+        "DJL002:",
+        f"  {b}:8:1: Duplicate name 'squares' (first at {a}:1)",
+    ]
