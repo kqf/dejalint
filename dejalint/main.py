@@ -114,6 +114,12 @@ def duplicate_names(tree: ast.Module, config: Config):
             yield node.name, node
 
 
+def suppressed(lines: list[str], node: DefinitionNode, code: str) -> bool:
+    # From the def line up to the first body statement
+    end = node.body[0].lineno if node.body else node.lineno
+    return any(code in line for line in lines[node.lineno - 1 : end])
+
+
 def iter_files(paths: list[Path]) -> list[Path]:
     def relative(path):
         for py in sorted(path.rglob("*.py")):
@@ -136,10 +142,14 @@ def check(
 ) -> list[Violation]:
     groups = defaultdict(list)
     for py in iter_files(paths):
-        tree = ast.parse(py.read_text(), str(py))
+        source = py.read_text()
+        tree = ast.parse(source, str(py))
+        lines = source.splitlines()
         for r in rules:
             for key, node in r.keys(tree, config):
-                groups[r, key].append((py, node))
+                # Suppressed nodes are left out of the comparison entirely
+                if not suppressed(lines, node, r.code):
+                    groups[r, key].append((py, node))
 
     violations: list[Violation] = []
     for (r, _), locs in groups.items():
