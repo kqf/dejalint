@@ -44,6 +44,28 @@ def test_clean(src: Path):
     assert check([src / "c.py"], Config()) == []
 
 
+@pytest.mark.parametrize(
+    "header",
+    [
+        "def squares(xs):  # noqa: DJL001",
+        "def squares(xs):\n    # noqa: E501, DJL001",
+    ],
+)
+def test_noqa(src: Path, header: str):
+    a, b = src / "a.py", src / "b.py"
+    # Suppressing the first occurrence also silences its copy
+    a.write_text(f"{header}{BODY}")
+    assert list(by_line(check([src], Config()))) == [
+        f"{b}:8:1: DJL002 Duplicate name 'squares' (first at {a}:1)",
+    ]
+
+
+def test_noqa_other_code(src: Path):
+    (src / "a.py").write_text(f"def squares(xs):  # noqa: DJL002{BODY}")
+    codes = [v.code for v in check([src], Config())]
+    assert codes == ["DJL001"]
+
+
 def test_by_rule(src: Path):
     a, b = src / "a.py", src / "b.py"
     assert list(by_rule(check([src], Config()))) == [
