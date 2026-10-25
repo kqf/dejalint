@@ -1,0 +1,9 @@
+- id: dejalint
+  name: dejalint
+  description: Find duplicate function bodies and names
+  entry: dejalint
+  language: python
+  types: [python]
+  # Duplicates span files, so lint the configured paths, not just staged ones
+  pass_filenames: false
+  require_serial: true

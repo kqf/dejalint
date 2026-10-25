@@ -35,3 +35,14 @@ precedence over it. Paths are relative to the ``pyproject.toml`` location.
     paths = ["src", "tests"]
     min-nodes = 8
     format = "line"  # or "rule"
+
+Pre-commit
+----------
+
+.. code-block:: yaml
+
+    repos:
+      - repo: https://github.com/kqf/dejalint
+        rev: v0.x.y
+        hooks:
+          - id: dejalint
