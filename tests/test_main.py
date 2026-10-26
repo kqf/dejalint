@@ -10,6 +10,7 @@ from dejalint.main import (
     by_line,
     by_rule,
     check,
+    each,
     find_pyproject,
     load_config,
     main,
@@ -80,9 +81,8 @@ def test_standalone_rule(tmp_path: Path):
     py.write_text("x = 1\ny = (\n    2\n)  # noqa: TST001\nx = 3\n")
     standalone = Rule(
         "TST001",
-        "Assignment '{}'",
         assignments,
-        duplicates=False,
+        each("Assignment '{}'"),
         noqa=statement,
     )
     assert list(by_line(check([py], Config(), [standalone]))) == [
