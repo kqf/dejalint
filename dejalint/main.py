@@ -68,6 +68,35 @@ KeyFn = Callable[
 # Returns the (first, last) lines where a noqa comment silences the node
 NoqaFn = Callable[[ast.stmt], tuple[int, int]]
 
+Location = tuple[Path, ast.stmt]
+
+# Turns the nodes sharing a key into (path, node, message) violations
+ReportFn = Callable[
+    [Hashable, list[Location]], Iterable[tuple[Path, ast.stmt, str]]
+]
+
+
+def duplicates(message: str) -> ReportFn:
+    # Every node after the first is a copy of it
+    def report(key: Hashable, locs: list[Location]):
+        (fpy, fnode), *copies = locs
+        for py, node in copies:
+            # Duplicate rules compare definitions, which are named
+            name = cast(DefinitionNode, node).name
+            first = f"{fpy}:{fnode.lineno}"
+            yield py, node, f"{message} '{name}' (first at {first})"
+
+    return report
+
+
+def each(message: str) -> ReportFn:
+    # Every node is a violation on its own, `message` is formatted with the key
+    def report(key: Hashable, locs: list[Location]):
+        for py, node in locs:
+            yield py, node, message.format(key)
+
+    return report
+
 
 def header(node: ast.stmt) -> tuple[int, int]:
     # From the def line up to the first body statement
@@ -83,10 +112,8 @@ def statement(node: ast.stmt) -> tuple[int, int]:
 @dataclass(frozen=True)
 class Rule:
     code: str
-    message: str
     keys: KeyFn
-    # Off: every node is a violation on its own and its key is the name
-    duplicates: bool = True
+    report: ReportFn
     noqa: NoqaFn = header
 
 
@@ -95,12 +122,11 @@ RULES: list[Rule] = []
 
 def rule(
     code: str,
-    message: str,
-    duplicates: bool = True,
+    report: ReportFn,
     noqa: NoqaFn = header,
 ) -> Callable[[KeyFn], KeyFn]:
     def register(fn: KeyFn) -> KeyFn:
-        RULES.append(Rule(code, message, fn, duplicates, noqa))
+        RULES.append(Rule(code, fn, report, noqa))
         return fn
 
     return register
@@ -117,7 +143,7 @@ def size(body: list[ast.stmt]) -> int:
     return sum(1 for stmt in body for _ in ast.walk(stmt))
 
 
-@rule("DJL001", "Duplicate function body")
+@rule("DJL001", duplicates("Duplicate function body"))
 def duplicate_bodies(path: Path, tree: ast.Module, config: Config):
     for node in ast.walk(tree):
         if not isinstance(node, FunctionNode):
@@ -129,7 +155,7 @@ def duplicate_bodies(path: Path, tree: ast.Module, config: Config):
         yield ast.dump(ast.Module(body=body, type_ignores=[])), node
 
 
-@rule("DJL002", "Duplicate name")
+@rule("DJL002", duplicates("Duplicate name"))
 def duplicate_names(path: Path, tree: ast.Module, config: Config):
     for node in tree.body:
         if isinstance(node, DefinitionNode):
@@ -172,33 +198,11 @@ def check(
                 if not suppressed(lines, node, r):
                     groups[r, key].append((py, node))
 
-    violations: list[Violation] = []
-    for (r, key), locs in groups.items():
-        if not r.duplicates:
-            violations.extend(
-                Violation(
-                    py,
-                    node.lineno,
-                    node.col_offset + 1,
-                    r.code,
-                    r.message.format(key),
-                )
-                for py, node in locs
-            )
-            continue
-        (fpy, fnode), *copies = locs
-        for py, node in copies:
-            # Duplicate rules compare definitions, which are named
-            name = cast(DefinitionNode, node).name
-            violations.append(
-                Violation(
-                    py,
-                    node.lineno,
-                    node.col_offset + 1,
-                    r.code,
-                    f"{r.message} '{name}' (first at {fpy}:{fnode.lineno})",
-                )
-            )
+    violations = [
+        Violation(py, node.lineno, node.col_offset + 1, r.code, message)
+        for (r, key), locs in groups.items()
+        for py, node, message in r.report(key, locs)
+    ]
     return sorted(violations)
 
 
