@@ -1,3 +1,4 @@
+import ast
 from argparse import ArgumentParser
 from pathlib import Path
 
@@ -5,12 +6,14 @@ import pytest
 
 from dejalint.main import (
     Config,
+    Rule,
     by_line,
     by_rule,
     check,
     find_pyproject,
     load_config,
     main,
+    statement,
 )
 
 BODY = """
@@ -64,6 +67,28 @@ def test_noqa_other_code(src: Path):
     (src / "a.py").write_text(f"def squares(xs):  # noqa: DJL002{BODY}")
     codes = [v.code for v in check([src], Config())]
     assert codes == ["DJL001"]
+
+
+def assignments(path: Path, tree: ast.Module, config: Config):
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            yield ast.unparse(node.targets[0]), node
+
+
+def test_standalone_rule(tmp_path: Path):
+    py = tmp_path / "a.py"
+    py.write_text("x = 1\ny = (\n    2\n)  # noqa: TST001\nx = 3\n")
+    standalone = Rule(
+        "TST001",
+        "Assignment '{}'",
+        assignments,
+        duplicates=False,
+        noqa=statement,
+    )
+    assert list(by_line(check([py], Config(), [standalone]))) == [
+        f"{py}:1:1: TST001 Assignment 'x'",
+        f"{py}:5:1: TST001 Assignment 'x'",
+    ]
 
 
 def test_by_rule(src: Path):
