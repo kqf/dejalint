@@ -17,7 +17,10 @@ from dejalint.main import (
     statement,
 )
 
-BODY = """
+
+@pytest.fixture
+def body() -> str:
+    return """
     total = 0
     for x in xs:
         total += x * x
@@ -26,8 +29,8 @@ BODY = """
 
 
 @pytest.fixture
-def src(tmp_path: Path) -> Path:
-    (tmp_path / "a.py").write_text(f"def squares(xs):{BODY}")
+def src(tmp_path: Path, body: str) -> Path:
+    (tmp_path / "a.py").write_text(f"def squares(xs):{body}")
     (tmp_path / "b.py").write_text(
         f'''\
 def other(xs):
