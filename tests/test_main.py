@@ -17,7 +17,10 @@ from dejalint.main import (
     statement,
 )
 
-BODY = """
+
+@pytest.fixture
+def body() -> str:
+    return """
     total = 0
     for x in xs:
         total += x * x
@@ -26,21 +29,36 @@ BODY = """
 
 
 @pytest.fixture
-def src(tmp_path: Path) -> Path:
-    (tmp_path / "a.py").write_text(f"def squares(xs):{BODY}")
+def src(tmp_path: Path, body: str) -> Path:
+    (tmp_path / "a.py").write_text(f"def squares(xs):{body}")
     (tmp_path / "b.py").write_text(
-        f'def other(xs):\n    """Docstring is ignored."""{BODY}\n'
+        f'def other(xs):\n    """Docstring is ignored."""{body}\n'
         "class squares:\n    pass\n"
     )
     (tmp_path / "c.py").write_text("def unique():\n    return 1\n")
     return tmp_path
 
 
-def test_check(src: Path):
-    a, b = src / "a.py", src / "b.py"
+@pytest.fixture
+def original(src: Path) -> Path:
+    return src / "a.py"
+
+
+@pytest.fixture
+def duplicate(src: Path) -> Path:
+    return src / "b.py"
+
+
+def test_check(src: Path, original: Path, duplicate: Path):
     assert list(by_line(check([src], Config()))) == [
-        f"{b}:1:1: DJL001 Duplicate function body 'other' (first at {a}:1)",
-        f"{b}:8:1: DJL002 Duplicate name 'squares' (first at {a}:1)",
+        (
+            f"{duplicate}:1:1: DJL001 Duplicate function body 'other' "
+            f"(first at {original}:1)"
+        ),
+        (
+            f"{duplicate}:8:1: DJL002 Duplicate name 'squares' "
+            f"(first at {original}:1)"
+        ),
     ]
 
 
@@ -55,17 +73,21 @@ def test_clean(src: Path):
         "def squares(xs):\n    # noqa: E501, DJL001",
     ],
 )
-def test_noqa(src: Path, header: str):
-    a, b = src / "a.py", src / "b.py"
+def test_noqa(
+    src: Path, original: Path, duplicate: Path, body: str, header: str
+):
     # Suppressing the first occurrence also silences its copy
-    a.write_text(f"{header}{BODY}")
+    original.write_text(f"{header}{body}")
     assert list(by_line(check([src], Config()))) == [
-        f"{b}:8:1: DJL002 Duplicate name 'squares' (first at {a}:1)",
+        (
+            f"{duplicate}:8:1: DJL002 Duplicate name 'squares' "
+            f"(first at {original}:1)"
+        ),
     ]
 
 
-def test_noqa_other_code(src: Path):
-    (src / "a.py").write_text(f"def squares(xs):  # noqa: DJL002{BODY}")
+def test_noqa_other_code(src: Path, original: Path, body: str):
+    original.write_text(f"def squares(xs):  # noqa: DJL002{body}")
     codes = [v.code for v in check([src], Config())]
     assert codes == ["DJL001"]
 
@@ -91,13 +113,15 @@ def test_standalone_rule(tmp_path: Path):
     ]
 
 
-def test_by_rule(src: Path):
-    a, b = src / "a.py", src / "b.py"
+def test_by_rule(src: Path, original: Path, duplicate: Path):
     assert list(by_rule(check([src], Config()))) == [
         "DJL001:",
-        f"  {b}:1:1: Duplicate function body 'other' (first at {a}:1)",
+        (
+            f"  {duplicate}:1:1: Duplicate function body 'other' "
+            f"(first at {original}:1)"
+        ),
         "DJL002:",
-        f"  {b}:8:1: Duplicate name 'squares' (first at {a}:1)",
+        f"  {duplicate}:8:1: Duplicate name 'squares' (first at {original}:1)",
     ]
 
 
