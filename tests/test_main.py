@@ -32,10 +32,19 @@ def body() -> str:
 def src(tmp_path: Path, body: str) -> Path:
     (tmp_path / "a.py").write_text(f"def squares(xs):{body}")
     (tmp_path / "b.py").write_text(
-        f'def other(xs):\n    """Docstring is ignored."""{body}\n'
-        "class squares:\n    pass\n"
+        f'''\
+def other(xs):
+    """Docstring is ignored."""{BODY}
+class squares:
+    pass
+'''
     )
-    (tmp_path / "c.py").write_text("def unique():\n    return 1\n")
+    (tmp_path / "c.py").write_text(
+        """\
+def unique():
+    return 1
+"""
+    )
     return tmp_path
 
 
@@ -67,17 +76,28 @@ def test_clean(src: Path):
 
 
 @pytest.mark.parametrize(
-    "header",
+    "source",
     [
-        "def squares(xs):  # noqa: DJL001",
-        "def squares(xs):\n    # noqa: E501, DJL001",
+        """\
+def squares(xs):  # noqa: DJL001
+    total = 0
+    for x in xs:
+        total += x * x
+    return total
+""",
+        """\
+def squares(xs):
+    # noqa: E501, DJL001
+    total = 0
+    for x in xs:
+        total += x * x
+    return total
+""",
     ],
 )
-def test_noqa(
-    src: Path, original: Path, duplicate: Path, body: str, header: str
-):
+def test_noqa(src: Path, original: Path, duplicate: Path, source: str):
     # Suppressing the first occurrence also silences its copy
-    original.write_text(f"{header}{body}")
+    original.write_text(source)
     assert list(by_line(check([src], Config()))) == [
         (
             f"{duplicate}:8:1: DJL002 Duplicate name 'squares' "
@@ -86,8 +106,16 @@ def test_noqa(
     ]
 
 
-def test_noqa_other_code(src: Path, original: Path, body: str):
-    original.write_text(f"def squares(xs):  # noqa: DJL002{body}")
+def test_noqa_other_code(src: Path, original: Path):
+    original.write_text(
+        """\
+def squares(xs):  # noqa: DJL002
+    total = 0
+    for x in xs:
+        total += x * x
+    return total
+"""
+    )
     codes = [v.code for v in check([src], Config())]
     assert codes == ["DJL001"]
 
@@ -100,7 +128,15 @@ def assignments(path: Path, tree: ast.Module, config: Config):
 
 def test_standalone_rule(tmp_path: Path):
     py = tmp_path / "a.py"
-    py.write_text("x = 1\ny = (\n    2\n)  # noqa: TST001\nx = 3\n")
+    py.write_text(
+        """\
+x = 1
+y = (
+    2
+)  # noqa: TST001
+x = 3
+"""
+    )
     standalone = Rule(
         "TST001",
         assignments,
@@ -135,7 +171,12 @@ def test_find_pyproject(tmp_path: Path):
 def test_load_config(tmp_path: Path):
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(
-        '[tool.dejalint]\npaths = ["src"]\nmin-nodes = 3\nformat = "rule"\n'
+        """\
+[tool.dejalint]
+paths = ["src"]
+min-nodes = 3
+format = "rule"
+"""
     )
     assert load_config(pyproject, ArgumentParser().error) == {
         "paths": [tmp_path / "src"],
@@ -147,7 +188,12 @@ def test_load_config(tmp_path: Path):
 
 def test_load_config_unknown(tmp_path: Path, capsys):
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text("[tool.dejalint]\nfoo = 1\n")
+    pyproject.write_text(
+        """\
+[tool.dejalint]
+foo = 1
+"""
+    )
     on_error = ArgumentParser().error
     with pytest.raises(SystemExit):
         load_config(pyproject, on_error)
@@ -155,7 +201,12 @@ def test_load_config_unknown(tmp_path: Path, capsys):
 
 
 def test_main_invalid_format(src, monkeypatch):
-    (src / "pyproject.toml").write_text('[tool.dejalint]\nformat = "xml"\n')
+    (src / "pyproject.toml").write_text(
+        """\
+[tool.dejalint]
+format = "xml"
+"""
+    )
     monkeypatch.chdir(src)
     with pytest.raises(SystemExit):
         main([])
