@@ -29,6 +29,16 @@ def body() -> str:
 
 
 @pytest.fixture
+def original(src: Path) -> Path:
+    return src / "a.py"
+
+
+@pytest.fixture
+def duplicate(src: Path) -> Path:
+    return src / "b.py"
+
+
+@pytest.fixture
 def src(tmp_path: Path, body: str) -> Path:
     (tmp_path / "a.py").write_text(f"def squares(xs):{body}")
     (tmp_path / "b.py").write_text(
@@ -46,16 +56,6 @@ def unique():
 """
     )
     return tmp_path
-
-
-@pytest.fixture
-def original(src: Path) -> Path:
-    return src / "a.py"
-
-
-@pytest.fixture
-def duplicate(src: Path) -> Path:
-    return src / "b.py"
 
 
 def test_check(src: Path, original: Path, duplicate: Path):
