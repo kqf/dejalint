@@ -34,7 +34,7 @@ def src(tmp_path: Path, body: str) -> Path:
     (tmp_path / "b.py").write_text(
         f'''\
 def other(xs):
-    """Docstring is ignored."""{BODY}
+    """Docstring is ignored."""{body}
 class squares:
     pass
 '''
