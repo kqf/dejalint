@@ -29,19 +29,16 @@ def body() -> str:
 
 
 @pytest.fixture
-def original(src: Path) -> Path:
-    return src / "a.py"
+def original(tmp_path: Path, body) -> Path:
+    opath = tmp_path / "a.py"
+    opath.write_text(f"def squares(xs):{body}")
+    return opath
 
 
 @pytest.fixture
-def duplicate(src: Path) -> Path:
-    return src / "b.py"
-
-
-@pytest.fixture
-def src(tmp_path: Path, body: str) -> Path:
-    (tmp_path / "a.py").write_text(f"def squares(xs):{body}")
-    (tmp_path / "b.py").write_text(
+def duplicate(tmp_path: Path, body) -> Path:
+    opath = tmp_path / "b.py"
+    opath.write_text(
         f'''\
 def other(xs):
     """Docstring is ignored."""{body}
@@ -49,12 +46,22 @@ class squares:
     pass
 '''
     )
-    (tmp_path / "c.py").write_text(
+    return opath
+
+
+def unique(tmp_path: Path) -> Path:
+    opath = tmp_path / "c.py"
+    opath.write_text(
         """\
 def unique():
     return 1
 """
     )
+    return opath
+
+
+@pytest.fixture
+def src(tmp_path: Path) -> Path:
     return tmp_path
 
 
