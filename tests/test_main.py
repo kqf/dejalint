@@ -49,6 +49,7 @@ class squares:
     return opath
 
 
+@pytest.fixture
 def unique(tmp_path: Path) -> Path:
     opath = tmp_path / "c.py"
     opath.write_text(
@@ -78,8 +79,8 @@ def test_check(src: Path, original: Path, duplicate: Path):
     ]
 
 
-def test_clean(src: Path):
-    assert check([src / "c.py"], Config()) == []
+def test_clean(unique: Path):
+    assert check([unique], Config()) == []
 
 
 @pytest.mark.parametrize(
@@ -113,7 +114,7 @@ def test_noqa(src: Path, original: Path, duplicate: Path, source: str):
     ]
 
 
-def test_noqa_other_code(src: Path, original: Path):
+def test_noqa_other_code(src: Path, original: Path, duplicate: Path):
     original.write_text(
         """\
 def squares(xs):  # noqa: DJL002
