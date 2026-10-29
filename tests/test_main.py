@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from dejalint.main import (
+    RULES,
     Config,
     Rule,
     by_line,
@@ -66,12 +67,21 @@ def src(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_check(src: Path, original: Path, duplicate: Path):
-    assert list(by_line(check([src], Config()))) == [
+def only(code: str) -> list[Rule]:
+    return [r for r in RULES if r.code == code]
+
+
+def test_djl001(src: Path, original: Path, duplicate: Path):
+    assert list(by_line(check([src], Config(), only("DJL001")))) == [
         (
             f"{duplicate}:1:1: DJL001 Duplicate function body 'other' "
             f"(first at {original}:1)"
         ),
+    ]
+
+
+def test_djl002(src: Path, original: Path, duplicate: Path):
+    assert list(by_line(check([src], Config(), only("DJL002")))) == [
         (
             f"{duplicate}:8:1: DJL002 Duplicate name 'squares' "
             f"(first at {original}:1)"
