@@ -6,75 +6,43 @@ import pytest
 from dejalint.main import RULES, Config, Rule, by_line, check, each, statement
 
 
-def only(code: str) -> list[Rule]:
-    return [r for r in RULES if r.code == code]
+def report(path: Path, rules: list[Rule] = RULES) -> list[str]:
+    return list(by_line(check([path], Config(), rules)))
 
 
-def test_djl001(src: Path, original: Path, duplicate: Path):
-    assert list(by_line(check([src], Config(), only("DJL001")))) == [
-        (
-            f"{duplicate}:1:1: DJL001 Duplicate function body 'other' "
-            f"(first at {original}:1)"
-        ),
-    ]
-
-
-def test_djl002(src: Path, original: Path, duplicate: Path):
-    assert list(by_line(check([src], Config(), only("DJL002")))) == [
-        (
-            f"{duplicate}:8:1: DJL002 Duplicate name 'squares' "
-            f"(first at {original}:1)"
-        ),
+@pytest.mark.parametrize(
+    "code, message",
+    [
+        ("DJL001", "1:1: DJL001 Duplicate function body 'other'"),
+        ("DJL002", "8:1: DJL002 Duplicate name 'squares'"),
+    ],
+)
+def test_rule(
+    src: Path, original: Path, duplicate: Path, code: str, message: str
+):
+    rules = [r for r in RULES if r.code == code]
+    assert report(src, rules) == [
+        f"{duplicate}:{message} (first at {original}:1)"
     ]
 
 
 def test_clean(unique: Path):
-    assert check([unique], Config()) == []
+    assert report(unique) == []
 
 
 @pytest.mark.parametrize(
-    "source",
+    "header, codes",
     [
-        """\
-def squares(xs):  # noqa: DJL001
-    total = 0
-    for x in xs:
-        total += x * x
-    return total
-""",
-        """\
-def squares(xs):
-    # noqa: E501, DJL001
-    total = 0
-    for x in xs:
-        total += x * x
-    return total
-""",
+        ("def squares(xs):  # noqa: DJL001", ["DJL002"]),
+        ("def squares(xs):\n    # noqa: E501, DJL001", ["DJL002"]),
+        ("def squares(xs):  # noqa: DJL002", ["DJL001"]),
     ],
 )
-def test_noqa(src: Path, original: Path, duplicate: Path, source: str):
+@pytest.mark.usefixtures("duplicate")
+def test_noqa(src: Path, original: Path, body: str, header: str, codes):
     # Suppressing the first occurrence also silences its copy
-    original.write_text(source)
-    assert list(by_line(check([src], Config()))) == [
-        (
-            f"{duplicate}:8:1: DJL002 Duplicate name 'squares' "
-            f"(first at {original}:1)"
-        ),
-    ]
-
-
-def test_noqa_other_code(src: Path, original: Path, duplicate: Path):
-    original.write_text(
-        """\
-def squares(xs):  # noqa: DJL002
-    total = 0
-    for x in xs:
-        total += x * x
-    return total
-"""
-    )
-    codes = [v.code for v in check([src], Config())]
-    assert codes == ["DJL001"]
+    original.write_text(f"{header}{body}")
+    assert [v.code for v in check([src], Config())] == codes
 
 
 def assignments(path: Path, tree: ast.Module, config: Config):
@@ -94,13 +62,8 @@ y = (
 x = 3
 """
     )
-    standalone = Rule(
-        "TST001",
-        assignments,
-        each("Assignment '{}'"),
-        noqa=statement,
-    )
-    assert list(by_line(check([py], Config(), [standalone]))) == [
+    rule = Rule("TST001", assignments, each("Assignment '{}'"), statement)
+    assert report(py, [rule]) == [
         f"{py}:1:1: TST001 Assignment 'x'",
         f"{py}:5:1: TST001 Assignment 'x'",
     ]
