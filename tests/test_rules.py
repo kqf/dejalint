@@ -67,3 +67,29 @@ x = 3
         f"{py}:1:1: TST001 Assignment 'x'",
         f"{py}:5:1: TST001 Assignment 'x'",
     ]
+
+
+def test_recursion(tmp_path: Path):
+    py = tmp_path / "a.py"
+    py.write_text(
+        """\
+def fact(n):
+    return 1 if n < 2 else n * fact(n - 1)
+
+
+class Tree:
+    def walk(self):
+        return [self.walk()]
+
+    def size(self):  # noqa: DJL003
+        return self.size()
+
+    def flat(self):
+        return walk()
+"""
+    )
+    rules = [r for r in RULES if r.code == "DJL003"]
+    assert report(py, rules) == [
+        f"{py}:1:1: DJL003 Recursive function 'fact'",
+        f"{py}:6:5: DJL003 Recursive function 'walk'",
+    ]
