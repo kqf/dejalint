@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from dejalint.main import RULES, Config, Rule, by_line, check, each, statement
+from dejalint.core import Rule, each, statement
+from dejalint.main import RULES, Config, by_line, check
 
 
 def report(path: Path, rules: list[Rule] = RULES) -> list[str]:
