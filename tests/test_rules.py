@@ -26,6 +26,35 @@ def test_rule(
     ]
 
 
+@pytest.mark.usefixtures("duplicate")
+def test_near_duplicate(src: Path, original: Path):
+    # Exact copies are reported by DJL001 only
+    renamed = src / "d.py"
+    renamed.write_text(
+        """\
+def sum_squares(values):
+    acc = 0
+    for v in values:
+        acc += v * v
+    return acc
+
+
+def reversed_squares(xs):
+    total = 0
+    for x in reversed(xs):
+        total += x * x
+    return total
+"""
+    )
+    rules = [r for r in RULES if r.code == "DJL004"]
+    assert report(src, rules) == [
+        (
+            f"{renamed}:1:1: DJL004 Near-duplicate function body "
+            f"'sum_squares' (first at {original}:1)"
+        )
+    ]
+
+
 def test_clean(unique: Path):
     assert report(unique) == []
 
