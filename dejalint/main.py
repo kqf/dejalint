@@ -4,22 +4,21 @@ import copy
 import sys
 import tomllib
 from collections import defaultdict
-from collections.abc import Callable, Hashable, Iterable, Iterator
-from dataclasses import dataclass, field, fields
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, fields
 from itertools import groupby
 from operator import attrgetter
 from pathlib import Path
-from typing import Any, NoReturn, cast
+from typing import Any, NoReturn
 
-FunctionNode = ast.FunctionDef | ast.AsyncFunctionDef
-DefinitionNode = FunctionNode | ast.ClassDef
-
-
-@dataclass
-class Config:
-    paths: list[Path] = field(default_factory=lambda: [Path()])
-    min_nodes: int = 8
-    format: str = "line"
+# Rules register themselves in RULES on import
+from dejalint import (  # noqa: F401
+    duplicate_bodies,
+    duplicate_names,
+    near_duplicate_bodies,
+    recursion,
+)
+from dejalint.core import RULES, Config, Rule
 
 
 def find_pyproject(start: Path) -> Path | None:
@@ -59,202 +58,6 @@ class Violation:
     col: int
     code: str
     message: str
-
-
-# Yields (key, node) per file; nodes sharing a key are duplicates
-KeyFn = Callable[
-    [Path, ast.Module, Config], Iterable[tuple[Hashable, ast.stmt]]
-]
-
-# Returns the (first, last) lines where a noqa comment silences the node
-NoqaFn = Callable[[ast.stmt], tuple[int, int]]
-
-Location = tuple[Path, ast.stmt]
-
-# Turns the nodes sharing a key into (path, node, message) violations
-ReportFn = Callable[
-    [Hashable, list[Location]], Iterable[tuple[Path, ast.stmt, str]]
-]
-
-
-def duplicates(message: str) -> ReportFn:
-    # Every node after the first is a copy of it
-    def report(key: Hashable, locs: list[Location]):
-        (fpy, fnode), *copies = locs
-        for py, node in copies:
-            # Duplicate rules compare definitions, which are named
-            name = cast(DefinitionNode, node).name
-            first = f"{fpy}:{fnode.lineno}"
-            yield py, node, f"{message} '{name}' (first at {first})"
-
-    return report
-
-
-def each(message: str) -> ReportFn:
-    # Every node is a violation on its own, `message` is formatted with the key
-    def report(key: Hashable, locs: list[Location]):
-        for py, node in locs:
-            yield py, node, message.format(key)
-
-    return report
-
-
-def header(node: ast.stmt) -> tuple[int, int]:
-    # From the def line up to the first body statement
-    if isinstance(node, DefinitionNode):
-        return node.lineno, node.body[0].lineno
-    return node.lineno, node.lineno
-
-
-def statement(node: ast.stmt) -> tuple[int, int]:
-    return node.lineno, node.end_lineno or node.lineno
-
-
-@dataclass(frozen=True)
-class Rule:
-    code: str
-    keys: KeyFn
-    report: ReportFn
-    noqa: NoqaFn = header
-
-
-RULES: list[Rule] = []
-
-
-def rule(
-    code: str,
-    report: ReportFn,
-    noqa: NoqaFn = header,
-) -> Callable[[KeyFn], KeyFn]:
-    def register(fn: KeyFn) -> KeyFn:
-        RULES.append(Rule(code, fn, report, noqa))
-        return fn
-
-    return register
-
-
-def strip_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
-    first = body[0] if body else None
-    if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
-        return body[1:]
-    return body
-
-
-def size(body: list[ast.stmt]) -> int:
-    return sum(1 for stmt in body for _ in ast.walk(stmt))
-
-
-def dump(body: list[ast.stmt]) -> str:
-    return ast.dump(ast.Module(body=body, type_ignores=[]))
-
-
-def functions(tree: ast.Module, config: Config) -> Iterator[FunctionNode]:
-    for node in ast.walk(tree):
-        if not isinstance(node, FunctionNode):
-            continue
-        # Skip stubs and one-liners like `...` or `return x`
-        if size(strip_docstring(node.body)) >= config.min_nodes:
-            yield node
-
-
-@rule("DJL001", duplicates("Duplicate function body"))
-def duplicate_bodies(path: Path, tree: ast.Module, config: Config):
-    for node in functions(tree, config):
-        yield dump(strip_docstring(node.body)), node
-
-
-def binding(node: ast.AST) -> str | None:
-    # The attribute that holds the name a node binds or refers to
-    if isinstance(node, ast.arg):
-        return "arg"
-    if isinstance(node, ast.Name):
-        return "id"
-
-    # sourcery skip: assign-if-exp, reintroduce-else
-    if isinstance(node, ast.ExceptHandler | DefinitionNode):
-        return "name"
-
-    return None
-
-
-def anonymize(node: FunctionNode) -> list[ast.stmt]:
-    # Locals are renamed in order of appearance, globals are kept as is
-    node = copy.deepcopy(node)
-    shared = {
-        name
-        for child in ast.walk(node)
-        if isinstance(child, ast.Global | ast.Nonlocal)
-        for name in child.names
-    }
-    names: dict[str, str] = {}
-    for child in ast.walk(node):
-        attr = binding(child)
-        if child is node or attr is None:
-            continue
-        # Only bindings introduce locals, loads may refer to globals
-        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
-            continue
-        name = getattr(child, attr)
-        if name is not None and name not in shared:
-            names.setdefault(name, f"_{len(names)}")
-
-    for child in ast.walk(node):
-        if child is not node and (attr := binding(child)):
-            name = getattr(child, attr)
-            setattr(child, attr, names.get(name, name))
-    return strip_docstring(node.body)
-
-
-def inexact(message: str) -> ReportFn:
-    report = duplicates(message)
-
-    # Exact copies are left to DJL001
-    def skip_exact(key: Hashable, locs: list[Location]):
-        seen, unique = set(), []
-        for py, node in locs:
-            exact = dump(strip_docstring(cast(FunctionNode, node).body))
-            if exact not in seen:
-                seen.add(exact)
-                unique.append((py, node))
-        return report(key, unique)
-
-    return skip_exact
-
-
-@rule("DJL004", inexact("Near-duplicate function body"))
-def near_duplicate_bodies(path: Path, tree: ast.Module, config: Config):
-    for node in functions(tree, config):
-        yield dump(anonymize(node)), node
-
-
-@rule("DJL002", duplicates("Duplicate name"))
-def duplicate_names(path: Path, tree: ast.Module, config: Config):
-    for node in tree.body:
-        if isinstance(node, DefinitionNode):
-            yield node.name, node
-
-
-def calls(node: FunctionNode) -> Iterator[str]:
-    for child in ast.walk(node):
-        if not isinstance(child, ast.Call):
-            continue
-        func = child.func
-        if isinstance(func, ast.Name):
-            yield func.id
-        # Methods recurse through self.name() or cls.name()
-        elif (
-            isinstance(func, ast.Attribute)
-            and isinstance(func.value, ast.Name)
-            and func.value.id in {"self", "cls"}
-        ):
-            yield func.attr
-
-
-@rule("DJL003", each("Recursive function '{}'"))
-def recursion(path: Path, tree: ast.Module, config: Config):
-    for node in ast.walk(tree):
-        if isinstance(node, FunctionNode) and node.name in calls(node):
-            yield node.name, node
 
 
 def suppressed(lines: list[str], node: ast.stmt, r: Rule) -> bool:
