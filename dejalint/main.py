@@ -15,6 +15,7 @@ from typing import Any, NoReturn
 from dejalint import (  # noqa: F401
     duplicate_bodies,
     duplicate_names,
+    error_swallowing,
     near_duplicate_bodies,
     recursion,
 )
