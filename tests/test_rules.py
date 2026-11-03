@@ -123,3 +123,61 @@ class Tree:
         f"{py}:1:1: DJL003 Recursive function 'fact'",
         f"{py}:6:5: DJL003 Recursive function 'walk'",
     ]
+
+
+def test_error_swallowing(tmp_path: Path):
+    py = tmp_path / "a.py"
+    py.write_text(
+        """\
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def load(paths):
+    for path in paths:
+        try:
+            read(path)
+        except Exception as e:
+            logger.exception("failed %s: %s", path, e)
+            continue
+        try:
+            read(path)
+        except:
+            print("oops")
+        try:
+            read(path)
+        except (OSError, BaseException):
+            logging.error("failed", exc_info=True)
+            return None
+        try:
+            read(path)
+        except Exception:  # noqa: DJL005
+            logger.warning("ignored")
+        try:
+            read(path)
+        except Exception:
+            pass
+        try:
+            read(path)
+        except ValueError:
+            logger.error("bad value")
+        try:
+            read(path)
+        except Exception:
+            logger.error("failed")
+            raise
+        try:
+            read(path)
+        except Exception:
+            logger.error("failed")
+            return fallback()
+"""
+    )
+    rules = [r for r in RULES if r.code == "DJL005"]
+    message = "DJL005 Exception logged and swallowed in"
+    assert report(py, rules) == [
+        f"{py}:10:9: {message} 'except Exception'",
+        f"{py}:15:9: {message} 'except'",
+        f"{py}:19:9: {message} 'except (OSError, BaseException)'",
+    ]
