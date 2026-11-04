@@ -1,6 +1,5 @@
 import argparse
 import ast
-import copy
 import sys
 import tomllib
 from collections import defaultdict
