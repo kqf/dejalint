@@ -181,3 +181,78 @@ def load(paths):
         f"{py}:15:9: {message} 'except'",
         f"{py}:19:9: {message} 'except (OSError, BaseException)'",
     ]
+
+
+def test_pass_through(tmp_path: Path):
+    py = tmp_path / "a.py"
+    py.write_text(
+        """\
+def get_user(id):
+    return fetch_user(id)
+
+
+def search(query, /, page, *, size):
+    \"\"\"Docstring is ignored.\"\"\"
+    return client.search(query, page=page, size=size)
+
+
+async def load(*args, **kwargs):
+    return await fetch(*args, **kwargs)
+
+
+class Repo(Base):
+    def get(self, id):
+        return self._db.get(id)
+
+    def put(self, key, value):
+        return super().put(key, value)
+
+    def close(self):
+        return self._db.close()
+
+    def find(self, id):  # noqa: DJL006
+        return self._db.find(id)
+
+
+def swapped(a, b):
+    return f(b, a)
+
+
+def extra(a):
+    return f(a, 1)
+
+
+def partial(a, b):
+    return f(a)
+
+
+def default(a=1):
+    return f(a)
+
+
+def computed(a):
+    return f(a + 1)
+
+
+def main():
+    return run()
+
+
+@property
+def decorated(a):
+    return f(a)
+
+
+def collides(a, *args):
+    return f(a=a, *args)
+"""
+    )
+    rules = [r for r in RULES if r.code == "DJL006"]
+    message = "DJL006 Pass-through wrapper"
+    assert report(py, rules) == [
+        f"{py}:1:1: {message} 'get_user'",
+        f"{py}:5:1: {message} 'search'",
+        f"{py}:10:1: {message} 'load'",
+        f"{py}:15:5: {message} 'get'",
+        f"{py}:18:5: {message} 'put'",
+    ]

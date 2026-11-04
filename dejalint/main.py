@@ -16,6 +16,7 @@ from dejalint import (  # noqa: F401
     duplicate_names,
     error_swallowing,
     near_duplicate_bodies,
+    pass_through,
     recursion,
 )
 from dejalint.core import RULES, Config, Rule
