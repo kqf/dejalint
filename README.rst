@@ -9,9 +9,24 @@ dejalint
    :target: https://pypi.org/project/dejalint/
    :alt: PyPI Downloads
 
-``dejalint`` is yet another linter.
+``dejalint`` is a linter that highlights patterns typical of AI-generated
+Python code.
 
 ----
+
+Rules
+-----
+
+======  ========================================================
+Code    Description
+======  ========================================================
+DJL001  Duplicate function body
+DJL002  Duplicate top-level name
+DJL003  Recursive function
+DJL004  Near-duplicate function body (same code, renamed locals)
+DJL005  Exception logged and swallowed
+DJL006  Pass-through wrapper
+======  ========================================================
 
 Installation
 ------------
